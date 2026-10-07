@@ -1,0 +1,20 @@
+==== Overall ====
+samples = 60
+accuracy = 50.00%
+
+==== Accuracy by Category ====
+          category  count    acc
+hop reasoning(2/3)     60 50.00%
+
+==== Accuracy by Hop ====
+hop  count    acc
+  2     60 50.00%
+
+==== Accuracy by Knowledge ====
+knowledge  count    acc
+     null     60 50.00%
+
+==== Accuracy by Reasoning Type ====
+Empty DataFrame
+Columns: [type, count, acc]
+Index: []

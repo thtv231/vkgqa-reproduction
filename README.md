@@ -53,8 +53,35 @@ Tất cả lệnh chạy trong thư mục `scripts/`.
 | 6. Chấm điểm | `python ../vkgqa_eval/eval.py --input results/<tên>_results.jsonl` | `*_evaluated.jsonl`, `*_summary.txt` |
 | 7. Ghi nhận lên W&B | `wandb login` rồi `python 06_log_wandb.py --project vkgqa-reproduction` | các run trên W&B |
 
+### Phân tích cắt bỏ (60 câu hop-2)
+
+```bash
+# Sinh ảnh cho từng cấu hình
+python 03_generate_images.py --strategy 1 --hop-filter 2 --out-dir images_ablation/s1_fixed
+python 03_generate_images.py --strategy 2 --hop-filter 2 --out-dir images_ablation/s2_fixed
+python 03_generate_images.py --strategy 1 --hop-filter 2 --legacy-resolve --out-dir images_ablation/s1_labeled
+
+# Inference + chấm điểm cho từng thư mục ảnh
+python 04_run_inference.py --model qwen/qwen3.8-27b --hop-filter 2 --images-dir images_ablation/s1_fixed --output results/abl_s1_fixed_results.jsonl
+python ../vkgqa_eval/eval.py --input results/abl_s1_fixed_results.jsonl
+
+# Thống kê đồ thị con (số nút/cạnh, ảnh có chứa đáp án không) bằng cách phát lại bước trích
+python 07_analyze_subgraphs.py --hop-filter 2 --out results/subgraph_stats_hop2.json
+```
+
+Các cờ của `03_generate_images.py`:
+
+| Cờ | Ý nghĩa |
+|---|---|
+| `--strategy {1,2}` | 1 = BFS ngẫu nhiên; 2 = khóa đường suy luận tâm → đáp án |
+| `--directed-path` | (chiến lược 2) chỉ tìm đường theo chiều cạnh |
+| `--legacy-resolve` | dùng cách tra cứu thực thể cũ (trước khi sửa lỗi trùng tên khác hoa/thường) |
+| `--hop-filter N` | chỉ sinh ảnh cho câu có hop = N |
+| `--seed`, `--out-dir`, `--overwrite-hop` | seed, thư mục ra, sinh lại ảnh đã có |
+
 Ghi chú:
-- `03_generate_images.py` mặc định `--seed 42` và bỏ qua ảnh đã tồn tại; thêm `--overwrite-hop 2` để sinh lại ảnh có hop ≥ 2.
+- `03_generate_images.py` mặc định `--seed 42` và bỏ qua ảnh đã tồn tại; thêm `--overwrite-hop 2` để sinh lại ảnh có hop ≥ 2. Với cùng seed và cùng `--hop-filter`, tập nút/cạnh của đồ thị con lặp lại được giữa các lần chạy (bố cục ảnh do vis.js mô phỏng vật lý nên có thể khác).
+- Khi gặp lỗi 429 (giới hạn token/ngày của Groq), `04_run_inference.py` tự chờ theo thời gian API gợi ý rồi chạy tiếp.
 - `04_run_inference.py` đọc ảnh trong `scripts/images/`; thêm `--images-dir images_backup_strategy1` để chạy với ảnh chiến lược 1.
 - `04_run_inference.py` tự nối tiếp (resume) nếu file output đã có một phần; lỗi API được ghi vào file `.log` cùng tên.
 - `06_log_wandb.py --dry-run` in số liệu mà không cần tài khoản W&B. Danh sách run và file tương ứng khai báo trong biến `RUNS` của script.

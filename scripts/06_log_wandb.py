@@ -45,7 +45,43 @@ RUNS = [
         "strategy": "S2 v2 (khóa đường suy luận)",
         "image_dir": "images",
     },
+    # --- Ablation sạch: cùng cách vẽ mới (có nhãn), 60 câu hop-2 ---
+    {
+        "name": "abl-S1-render-new-resolve-legacy",
+        "file": "abl_s1_labeled_results_evaluated.jsonl",
+        "group": "ablation-clean",
+        "strategy": "S1, cách vẽ mới, tra cứu entity cũ",
+        "image_dir": "images_ablation/s1_labeled",
+        "stats_key": "S1-legacy",
+    },
+    {
+        "name": "abl-S2-render-new-resolve-legacy",
+        "file": "abl_s2_undirected_results_evaluated.jsonl",
+        "group": "ablation-clean",
+        "strategy": "S2 vô hướng, cách vẽ mới, tra cứu entity cũ",
+        "image_dir": "images",
+        "stats_key": "S2-undirected-legacy",
+    },
+    {
+        "name": "abl-S1-render-new-resolve-fixed",
+        "file": "abl_s1_fixed_results_evaluated.jsonl",
+        "group": "ablation-clean",
+        "strategy": "S1, cách vẽ mới, tra cứu entity đã sửa",
+        "image_dir": "images_ablation/s1_fixed",
+        "stats_key": "S1",
+    },
+    {
+        "name": "abl-S2-render-new-resolve-fixed",
+        "file": "abl_s2_fixed_results_evaluated.jsonl",
+        "group": "ablation-clean",
+        "strategy": "S2 vô hướng, cách vẽ mới, tra cứu entity đã sửa",
+        "image_dir": "images_ablation/s2_fixed",
+        "stats_key": "S2-undirected",
+    },
 ]
+STATS_FILE = RESULTS_DIR / "subgraph_stats_hop2.json"
+# Các run cũ (cách vẽ cũ) dùng để so trên tập câu hop-2 chung
+LEGACY_SHARED = ["S1-qwen3.8-27b", "S2v1-qwen3.8-27b", "S2v2-qwen3.8-27b-hop2"]
 
 N_IMAGE_SAMPLES = 10
 
@@ -84,12 +120,19 @@ def main():
     parser.add_argument("--project", default="vkgqa-reproduction")
     parser.add_argument("--entity", default=None, help="W&B entity (user/team), mặc định là tài khoản đăng nhập")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--only", default="", help="Chỉ log các run có tên trong danh sách (phân tách bằng dấu phẩy)")
+    parser.add_argument("--skip-compare", action="store_true", help="Không log run so sánh hop-2 chung")
     args = parser.parse_args()
 
-    all_rows = {run["name"]: load(RESULTS_DIR / run["file"]) for run in RUNS}
-    common, common_acc = shared_hop2(all_rows)
+    runs = [r for r in RUNS if (RESULTS_DIR / r["file"]).exists()]
+    all_rows = {run["name"]: load(RESULTS_DIR / run["file"]) for run in runs}
+    common, common_acc = shared_hop2({k: all_rows[k] for k in LEGACY_SHARED})
+    stats = json.load(open(STATS_FILE, encoding="utf-8")) if STATS_FILE.exists() else {}
+    if args.only:
+        wanted = set(args.only.split(","))
+        runs = [r for r in runs if r["name"] in wanted]
 
-    for run in RUNS:
+    for run in runs:
         print(run["name"], summarize(all_rows[run["name"]]))
     print(f"Hop-2 trên {len(common)} câu chung:", {k: round(v, 4) for k, v in common_acc.items()})
     if args.dry_run:
@@ -97,7 +140,7 @@ def main():
 
     import wandb
 
-    for run in RUNS:
+    for run in runs:
         rows = all_rows[run["name"]]
         model = rows[0].get("model", "")
         config = {
@@ -117,6 +160,9 @@ def main():
         if run["name"] in common_acc:
             metrics["acc_hop2_shared"] = common_acc[run["name"]]
             metrics["n_hop2_shared"] = len(common)
+        if run.get("stats_key") in stats:
+            st = stats[run["stats_key"]]
+            metrics.update({f"subgraph_{k}": v for k, v in st.items() if v is not None})
         wb.summary.update(metrics)
 
         table = wandb.Table(columns=["index", "hop", "entity", "question", "answer",
@@ -134,6 +180,8 @@ def main():
         wb.log({"predictions": table})
         wb.finish()
 
+    if args.skip_compare:
+        return
     # Run tổng hợp: so sánh S1 vs S2 trên cùng tập câu hop-2
     wb = wandb.init(project=args.project, entity=args.entity, name="compare-hop2-shared",
                     group="main-results", job_type="analysis", reinit=True,

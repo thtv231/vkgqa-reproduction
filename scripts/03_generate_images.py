@@ -42,15 +42,24 @@ HOP_SIZES = {0: 28, 1: 18, 2: 14, 3: 11}
 EDGE_WEIGHT = {1: 1.2, 2: 1.2, 3: 1.5}
 
 
+# Tập tên node của KG, dùng để khớp chính xác trước khi thử lowercase
+NODES: set[str] = set()
+# True = cách tra cứu cũ (chỉ xét lookup.values()), dễ nhầm "Denis Leary" (người)
+# với "denis leary" (tag) vì lookup lowercase bị ghi đè; đặt qua --legacy-resolve
+LEGACY_RESOLVE = False
+
+
 def load_data():
     with open(GRAPH_PKL, "rb") as f:
         data = pickle.load(f)
+    NODES.update(data["graph"].nodes())
     return data["graph"], data["lookup"]
 
 
 def resolve_entity(entity_name: str, lookup: dict) -> str | None:
     """Tìm canonical entity name, thử exact rồi lowercase."""
-    if entity_name in lookup.values():
+    known = lookup.values() if LEGACY_RESOLVE else NODES
+    if entity_name in known:
         return entity_name
     lower = entity_name.lower()
     return lookup.get(lower)
@@ -58,6 +67,9 @@ def resolve_entity(entity_name: str, lookup: dict) -> str | None:
 
 MAX_NODES = 25   # giới hạn nodes để graph vừa render được
 MAX_NBR_PER_NODE = 5   # sample tối đa 5 neighbors mỗi node mỗi hop
+
+# True = chỉ tìm đường suy luận theo chiều cạnh (phiên bản S2 v1); đặt qua --directed-path
+DIRECTED_PATH = False
 
 
 
@@ -95,7 +107,7 @@ def extract_subgraph(G: nx.MultiDiGraph, center: str, k: int) -> tuple[nx.MultiD
     w = EDGE_WEIGHT.get(k, 1.5)
     max_edges = int(w * sub.number_of_nodes())
     if sub.number_of_edges() > max_edges:
-        all_edges = list(sub.edges(keys=True, data=True))
+        all_edges = sorted(sub.edges(keys=True, data=True), key=lambda e: (e[0], e[1], e[2]))
         center_edges = [(u, v, key, d) for u, v, key, d in all_edges
                         if u == center or v == center]
         other_edges = [(u, v, key, d) for u, v, key, d in all_edges
@@ -119,8 +131,8 @@ def find_reasoning_path(G: nx.MultiDiGraph, start: str, end: str, max_k: int = 3
     Trả về (path_nodes, path_edges) hoặc None nếu không tìm thấy / path quá dài.
     """
     try:
-        G_undir = G.to_undirected()
-        path_nodes = nx.shortest_path(G_undir, start, end)
+        G_search = G if DIRECTED_PATH else G.to_undirected()
+        path_nodes = nx.shortest_path(G_search, start, end)
     except (nx.NetworkXNoPath, nx.NodeNotFound):
         return None
     if len(path_nodes) - 1 > max_k:
@@ -183,7 +195,7 @@ def extract_subgraph_strategy2(G: nx.MultiDiGraph, center: str, answer: str, k: 
     w = EDGE_WEIGHT.get(k, 1.5)
     max_edges = int(w * sub.number_of_nodes())
     if sub.number_of_edges() > max_edges:
-        all_edges = list(sub.edges(keys=True, data=True))
+        all_edges = sorted(sub.edges(keys=True, data=True), key=lambda e: (e[0], e[1], e[2]))
         kept = [(u, v, key, d) for u, v, key, d in all_edges if (u, v, key) in locked_edges]
         other_edges = [(u, v, key, d) for u, v, key, d in all_edges if (u, v, key) not in locked_edges]
         random.shuffle(other_edges)
@@ -290,8 +302,17 @@ def main():
                         help="Thư mục lưu ảnh PNG")
     parser.add_argument("--overwrite-hop", type=int, default=0,
                         help="Sinh lại ảnh đã có với hop >= N (0 = không ghi đè)")
+    parser.add_argument("--directed-path", action="store_true",
+                        help="Strategy 2: tìm đường theo chiều cạnh thay vì vô hướng (S2 v1)")
+    parser.add_argument("--legacy-resolve", action="store_true",
+                        help="Dùng cách tra cứu entity cũ (có lỗi trùng tên khác hoa/thường)")
+    parser.add_argument("--hop-filter", type=int, default=0,
+                        help="Chỉ sinh ảnh cho record có hop == N (0 = tất cả)")
     args = parser.parse_args()
     random.seed(args.seed)
+    global DIRECTED_PATH, LEGACY_RESOLVE
+    DIRECTED_PATH = args.directed_path
+    LEGACY_RESOLVE = args.legacy_resolve
     images_dir = Path(args.out_dir)
     images_dir.mkdir(parents=True, exist_ok=True)
 
@@ -314,6 +335,8 @@ def main():
                 seen_images[img] = rec
 
     records = list(seen_images.values())
+    if args.hop_filter:
+        records = [r for r in records if r["hop_k"] == args.hop_filter]
     print(f"Cần sinh {len(records)} ảnh unique...\n")
 
     ok = miss = skip = 0

@@ -44,6 +44,7 @@ MAX_RETRIES    = 3
 DELAY_BETWEEN  = 1.2   # giây giữa request (tránh rate limit)
 MAX_TOKENS     = 512
 TEMPERATURE    = 0     # deterministic — giống paper
+RATE_LIMIT_WAIT_MAX = 1800   # giây chờ tối đa mỗi lần gặp 429
 
 # Groq dùng OpenAI-compatible endpoint
 client = OpenAI(api_key=API_KEY, base_url="https://api.groq.com/openai/v1")
@@ -90,6 +91,17 @@ def call_groq(question: str, img_b64: str, model: str) -> str:
     )
     raw = resp.choices[0].message.content.strip()
     return strip_thinking(raw)   # strip <think> tags nếu còn sót
+
+
+def rate_limit_wait(e: Exception) -> float | None:
+    """Nếu lỗi là 429 thì trả về số giây cần chờ (theo 'try again in 1m2.3s'), ngược lại None."""
+    if getattr(e, "status_code", None) != 429:
+        return None
+    m = re.search(r"try again in (?:(\d+)h)?(?:(\d+)m)?(?:([\d.]+)s)?", str(e))
+    if not m or not any(m.groups()):
+        return RATE_LIMIT_WAIT_MAX
+    h, mi, se = (float(x) if x else 0.0 for x in m.groups())
+    return min(h * 3600 + mi * 60 + se + 5, RATE_LIMIT_WAIT_MAX)
 
 
 def load_existing(out_path: Path) -> set[int]:
@@ -161,13 +173,21 @@ def main():
                 continue
 
             pred = None
-            for attempt in range(MAX_RETRIES):
+            attempt = 0
+            while attempt < MAX_RETRIES:
                 try:
                     img_b64 = image_to_base64(img_path)
                     pred = call_groq(rec["question"], img_b64, model)
                     break
                 except Exception as e:
-                    if attempt < MAX_RETRIES - 1:
+                    wait = rate_limit_wait(e)
+                    if wait is not None:
+                        # 429: chờ đúng thời gian Groq gợi ý, không tính vào số lần thử
+                        print(f"[{i:3d}/{len(todo)}] 429 — chờ {wait:.0f}s"); sys.stdout.flush()
+                        time.sleep(wait)
+                        continue
+                    attempt += 1
+                    if attempt < MAX_RETRIES:
                         time.sleep(2 ** attempt)
                     else:
                         msg = f"[{i:3d}/{len(todo)}] ERR idx={rec['index']}: {e}"

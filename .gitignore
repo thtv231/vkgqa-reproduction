@@ -24,3 +24,8 @@ __pycache__/
 scripts/_temp_pyvis.html
 wandb/
 scripts/wandb/
+
+# Ảnh/log tạm của ablation không dùng trong báo cáo
+scripts/images_ablation/s2_directed/
+scripts/images_ablation_*.log
+*.jsonl.bak
