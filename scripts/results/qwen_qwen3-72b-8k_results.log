@@ -1,0 +1,1 @@
+[  1/1] ERR idx=2885: Error code: 404 - {'error': {'message': 'The model `qwen/qwen3-72b-8k` does not exist or you do not have access to it.', 'type': 'invalid_request_error', 'code': 'model_not_found'}}

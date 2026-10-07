@@ -1,0 +1,26 @@
+# Bí mật
+.env
+
+# Dữ liệu tải về (xem README)
+MetaQA/
+VKG-QA/
+vkgqa_eval/
+scripts/metaqa_kg.pkl
+
+# Tài liệu, slide, báo cáo
+*.pdf
+*.pptx
+slides/
+ieee_template/
+report/
+yeucau.md
+vidu.md
+SUBGRAPH_GUIDE.md
+VKG-QA_Tutorial.ipynb
+
+# Rác
+__pycache__/
+*.pyc
+scripts/_temp_pyvis.html
+wandb/
+scripts/wandb/

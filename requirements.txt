@@ -1,0 +1,9 @@
+networkx==3.6.1
+pyvis==0.3.2
+playwright==1.60.0
+openai==3.22.1
+python-dotenv==1.2.2
+pandas==3.0.5
+numpy==2.4.6
+wandb==0.30.0
+huggingface_hub
